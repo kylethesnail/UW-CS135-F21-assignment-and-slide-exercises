@@ -1,0 +1,366 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname Module18-Graphs) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #t)))
+;;--------------------------------------------Module 18-----------------------------------------------
+;;Directed graphs which consists of a collection of nodes (aka vertices) together with a collection of edges
+;;an edge (v,w) w is n out-neighbour of v and v is the in-neighbour of w
+;;A sequence of nodes v1, v2, ... vk is a path/route of length k-1
+;;if v1=vk, this is called a cycle
+;;Directed graphs without cycles are called DAGs
+
+;;Represent graph using adjacency list
+(define g
+  '((A (C D E))
+    (B (E J))
+    (C())
+    (D(F J))
+    (E(K))
+    (F(K H))
+    (H())
+    (J(H))
+    (K())))
+
+(define g2
+  '((Alpha (Zulu Hotel Uniform))
+    (Bravo (Charlie Hotel Delta))
+    (Charlie (Bravo Juliette November))
+    (Delta (Guelph Kilo))
+    (Echo (Charlie))
+    (Guelph(Charlie Novemeber))
+    (Hotel ())  
+    (Uniform())
+    (Juliette (Novemeber))
+    (Zulu())
+    (Kilo())
+    (November(Juiette))))
+           
+
+;;-------------------------***Template for graphs***--------------------------------------------
+;;A Node is Sym
+
+;;A graph is one of:
+;;* empty
+;;*(cons (list v (list w_1...w_n)) g)
+;;where g is a graph
+;;      v, w_1, w_2.... w_n are all Nodes
+;;      v is the in-neighbour to w_1... w_n in the graph
+;;      v does not appear as an in-neighbour in g
+;;
+
+;(define (graph-template g)
+;  (cond [(empty? g)....]
+;        [(cons? g)(...(first (first g)) ;; first of the first of g gives us the name of first node
+;                      (listof-node-template (second (first g))) ;; second of the first of g gives us the list of ad
+;                      ...(graph-template (rest g)))]))
+
+;;------------implement a small "neighbour" function with the graph-template---------------------
+;; (neighbours v g) produces the out-neighbours of v in g
+;; neighbours: Node Graph -> (listof Node)
+(check-expect (neighbours 'D g) '(F J))
+
+
+(define (neighbours v g)
+  (cond [(empty? g) (error "Node not found!")]
+        [(symbol=? v (first (first g)))(second (first g))]
+        [else (neighbours v (rest g))]))
+
+;;(neighbours 'Z g)
+
+;;higher-order implementation of (neighbours v g)
+(define(neighbours-v2 v g)
+  (local [(define match-v
+            (filter (lambda (x)(symbol=? v (first x))) g))]
+    (cond [(empty? g)(error "Node not in graph")]
+          [else (second (first match-v))])))
+
+(define (match-v? v g)
+            (filter (lambda (x)(symbol=? v (first x))) g))
+
+;;----------------Exercise 1-----------------------------------
+;;(count-outgoing-neighbours g) consumes a Graph and produces a (listof Nat) indicating how many out-neighbours each Node in g has
+(check-expect (count-outgoing-neighbours g)
+              (list 3 2 0 2 1 2 0 1 0))
+(check-expect (count-outgoing-neighbours empty) empty)
+
+;;count-outgoing-neighbours: Graph -> (listog Nat)
+(define (count-outgoing-neighbours g)
+  (cond [(empty? g) empty]
+        [else (map (lambda (lst) (length (second lst))) g)]))
+
+;;---------------Exercise 2-------------------------------------
+;;(count-in-neighbours g) consumes a graph and produces a (listof Nat) indicating how many in-neighbours each node has
+(check-expect (count-in-neighbours g)
+              (list 0 0 1 1 2 1 2 2 2))
+;; count-in-neighbours: Graph -> (listof Nat)
+
+(define (count-in-neighbours g)
+  (local [;;(extract-out-neighbours g) produces a list of list of out-neighbours
+          (define (extract-out-neighbours g)(map(lambda (node)(second node)) g))
+
+          ;; (contain-v? v g) filters out a list of all the out-neightbor lists which contain the node we are looking for
+          (define (contain-v? v g) (filter (lambda (lst)(member? v lst)) (extract-out-neighbours g)))
+
+          ;;(number-in-neightbours v) produces the number 
+          (define (number-in-neighbours v)(length (contain-v? v g)))]
+            
+
+          (map (lambda (node)(number-in-neighbours (first node))) g)))
+                       
+;;---------------------------FIND PATH!------------------------------------------
+;;
+;;cases for "find-path"
+;;1. If the origin equals the destination, the path consists of just this node
+;;2. If there is a path, the second node on that path must be an out-neighbour of the origin node
+;;Henceforth, each out-neighbour defines a subproblem (finding a path from it to the destination)
+
+;; A Generative Recursion: Backtracking algorithms
+;;backtracking algorithms try to find a path from an origin to a destination
+    ;;if the initial attempt does not work, such an algorithm "backtracks" and attempts another choice
+    ;;Eventually either you find a pth or all possibilities are exhausted meaning there is simply no path
+
+;;Exploring the list of out-neighbours
+;; use the "neighbours" function which gives us a list of all the out-neighbours associaited with that node
+;;apply "find-path" to each of the out-neighbours
+;;Mutual recursion: two mutually recursive functions find-path and find-path/list
+;;
+
+;;(find-path orig dest g) finds path from orig to dest in g if it exists
+;;find-path: Node Node Graph -> (anyof false (listof Node))
+
+(define (find-path orig dest g)
+  (cond [(symbol=? orig dest)(list dest)] ;;base case: the destination is right at where we start with
+        [else(local [(define nbrs (neighbours orig g)) ;; call our neighbours if we are not already at where we want to be
+                     (define maybe-path? (find-path/list nbrs dest g))]
+               (cond [(false? maybe-path?) false] ;; no path from this neighbour to the destination
+                       [else (cons orig maybe-path?)]))])) ;; if maybe-path yields anything other than false, we have ourselves a path, we cons the origin on the path
+
+
+;;(find-path/list nbrs dest g) produces a path from an element of nbrs to dest in g, if one exists
+;;find-path/list: (listof Node) Node Graph -> (anyof (listof Node) false)
+(define (find-path/list nbrs dest g);;recurse on the list of neighbours provided
+  (cond [(empty? nbrs) false]  ;; no path found among all neighbours looked 
+        [else (local [(define maybe-path? (find-path (first nbrs) dest g))] ;; check and see if there is a path from the first of the "neighbours" to the destination(Mutual-Recursion)
+                 (cond [(false? maybe-path?);; no path from the first neighbour to the destination
+                        (find-path/list (rest nbrs) dest g)]
+                       [else maybe-path?]))]))
+                       
+(define g1 '((A (B C D E))
+             (B (C D))
+             (C (E))
+             (D (C E))
+             (E ())))
+
+;;------------------------------Path v2: Handling cycles which leads to non-termination
+;;Use accumulative recusion to solve the problem of find-path possibly not terminating if there are cycles in the graph
+;;the accumulator keeps track of a list of visited nodes and we can then avoid visiting a node twice
+;;we will just add a check in find-path/list
+
+;;>>find-path/list-v2
+;; find-path/list: (listof Node) Node Graph (listof Node) -> (anyof (listof Node) galse)
+(define (find-path/list-v2 nbrs dest g visited)
+  (cond [(empty? nbrs) false]
+        [(member? (first nbrs) visited)
+         (find-path/list (rest nbrs) dest g visited)]
+        [else (local [(define path (find-path/acc-v2 (first nbrs)
+                                                  dest g visited))]
+                (cond [(false? path)
+                       (find-path/list (rest nbrs) dest g visited)]
+                      [else path]))]))
+
+;;find-path/acc: Node Node Graph (listof Node) -> (anyof (listof Node) false)
+(define (find-path/acc-v2 orig dest g visited)
+  (cond [(symbol=? orig dest)(list dest)]
+        [else (local [(define nbrs (neighbours orig g))
+                      (define path (find-path/list-v2 nbrs dest g
+                                                   (cons orig visited)))]
+                (cond [(false? path) false]
+                      [else (cons orig path)]))]))
+
+;;new wrapper function
+(define (find-path-v2 orig dest g)
+  (find-path/acc-v2 orig dest g '()))
+
+;;--------------------Path-v3: Deal with efficienvy by introducing "success" and "failure" structures
+;;a diamond formation of n diamonds shall have 3d+2 nodes in the graph and 2^d paths from D1 to an end node Y, and all paths will be explored
+;;Unfortunately our previous implementation of accumulator is forgetful, it forgets the new nodes that it has already visited (when failsm just moves on to (rest nbrs)
+;;We will encapsulate each kind of list in its own structure. We can then easily use the structure predicates to check whether the list of nodes represents a path (success)
+;;or visited nodes (failure).
+
+(define-struct success (path))
+;; a Success is a (make-sucess (listof Node)),a success structure contains a list of nodes that contain a path
+
+(define-struct failure (visited))
+;; a Failure is a (make-failure (listof Node)) a failure structure will contain a list of nodes that contain the visited nodes
+;; a Result is (anyof failure success)
+
+;;>>find-path/list
+;;find-path/list: (listof Node) Node Graph (listof Node) -> Result <<either fail or success>>
+(define (find-path/list-v3 nbrs dest g visited)
+  (cond [(empty? nbrs)(make-failure visited)]
+        [(member? (first nbrs)visited)
+         (find-path/list-v3 (rest nbrs) dest g visited)]
+        [else (local [(define result (find-path/acc-v3 (first nbrs) ;; we have since renamed the original "path" into result for clarityp
+                                                    dest g visited))]
+                (cond [(failure? result)
+                       (find-path/list-v3 (rest nbrs) dest g (failure-visited result))]
+                      [(success? result) result]))]))
+
+ ;;find-path/acc: Node Node Graph (listof Node) -> Result <<either fail or success>>
+ (define (find-path/acc-v3 orig dest g visited)
+   (cond [(symbol=? orig dest)(make-success (list dest))]
+         [else (local [(define nbrs (neighbours orig g))
+                       (define result (find-path/list nbrs dest g (cons orig visited)))]
+                 (cond [(failure? result) result]
+                       [(success? result) (make-success (cons orig (success-path result)))]))]))
+
+ ;;another wrapper function which hides the original use of failure and success structure
+ ;;find-path: Node Node Graph -> (anyof (listof Node) false)
+ (define (find-path-v3 orig dest g)
+   (local[(define result (find-path/acc-v3 orig dest g empty))]
+     (cond [(success? result)(success-path result)]
+           [(failure? result) false])))
+
+ ;;--------------------Exercise 3-----------------------------------
+ ;;(k-path-length start k graph)produces a path of k edges originating from start that does not repeat any nodes, produces false if there is not such path
+ (check-expect (k-path-length 'A 3 g) '(A D F K)) 
+ ;;k-path-length: Node Nat Graph -> (list of Node)
+
+(define (k-path-length orig k g)
+  (cond [(= k 0) (list orig)]
+        [else (local [(define nbrs (neighbours orig g))
+                      ;;summon the find-path/list function which goes through the neighbour list of our orig
+                      (define enough-path? (k-path-length/list nbrs (- k 1) g))] 
+                (cond [(false? enough-path?) false]
+                      [else (cons orig enough-path?)]))]))
+
+;;enough-path/list: Nat (listof Node) Graph -> (listof Node)
+(define(k-path-length/list nbrs n g)
+  (cond [(empty? nbrs) false] ;; no path found
+        [else (local [;; calling the k-path-length function to handle individual nodes (mutual recursion)
+                      (define enough-path? (k-path-length (first nbrs) n g))]
+                (cond [(false? enough-path?)
+                       (k-path-length/list (rest nbrs) n g)]
+                      [else enough-path?]))]))
+
+;;Exploring the list of out-neighbours
+;; use the "neighbours" function which gives us a list of all the out-neighbours associaited with that node
+;;apply "find-path" to each of the out-neighbours
+;;Mutual recursion: two mutually recursive functions find-path and find-path/list
+;;
+
+;;(find-path orig dest g) finds path from orig to dest in g if it exists
+;;find-path: Node Node Graph -> (anyof false (listof Node))
+
+;(define (find-path orig dest g)
+;  (cond [(symbol=? orig dest)(list dest)] ;;base case: the destination is right at where we start with
+;        [else(local [(define nbrs (neighbours orig g))
+;                     (define maybe-path? (find-path/list nbrs dest g))]
+;               (cond [(false? maybe-path?) false]
+;                       [else (cons orig maybe-path?)]))]))
+;
+;;;(find-path/list nbrs dest g) produces a path from an element of nbrs to dest in g, if one exists
+;;;find-path/list: (listof Node) Node Graph -> (anyof (listof Node) false)
+;(define (find-path/list nbrs dest g);;recurse on the list of neighbours provided
+;  (cond [(empty? nbrs) false]  ;; no path found
+;        [else (local [(define maybe-path? (find-path (first nbrs) dest g))] ;; check and see if there is a path from the first of the "neighbours" to the destination(Mutual-Recursion)
+;                 (cond [(false? maybe-path?)
+;                        (find-path/list (rest nbrs) dest g)]
+;                       [else maybe-path?]))]))
+;
+;;;(create-path orig k g) produces a path of at least length k
+;;;create-path: Node Nat Graph -> (listof Node)
+;(define (create-path orig k g)
+
+;;-------------------------Exercise 3-v2 (refer to find-path/v2)---------------
+
+;;find-path/acc: Node Nat Graph (listof Node) -> (anyof (listof Node) false)
+(define (create-path/acc orig k g visited)
+  (cond [(= k 0)(list orig)]
+        [else (local [(define nbrs (neighbours orig g))
+                      (define path (create-path/list nbrs k g (cons orig visited)))]
+                (cond [(false? path) false]
+                      [else (cons orig path)]))]))
+  
+;;create-path/list: (listof Node) Node Graph (listof Node) -> (anyof (listof Node) false)
+(define (create-path/list nbrs k g visited)
+  (cond [(empty? nbrs) false]
+        [(member? (first nbrs) visited)
+         (create-path/list (rest nbrs) k g visited)]
+        [else(local [(define path (create-path/acc (first nbrs) (- k 1) g visited))]
+               (cond [(false? path)
+                      (create-path/list (rest nbrs) k g visited)]
+                     [else path]))]))
+
+;;wrapper-function:
+(define (create-path orig k g)
+  (create-path/acc orig k g '()))
+
+;;----------------------Exercise 3-v3 (refer to find-path/v3)-------------------
+
+
+(define (create-path3/acc orig k g visited)
+  (cond [(= k 0) (list orig)]
+        [else (local [(define nbrs (neighbours orig g))
+                      (define result (create-path3/list nbrs k g (cons orig visited)))])]))
+
+(define (create-path3/list nbrs k g visited)
+  (cond [(empty? nbrs) (make-failure visited)]
+        [(member? (first nbrs) visited)
+         (create-path3/list (rest nbrs) k g visited)]
+        [else (local [(define result (create-path3/acc (first nbrs) (- k 1) g visited))]
+                (cond [(failure? result)
+                       (find-path/list (rest nbrs) k g (failure-visited result))]
+                      [(success? result) result]))]))
+
+(define (create-path3 orig k g)
+  (local [(define result (create-path3/acc orig k g empty))]
+    (cond [(success? result)(success-path result)]
+          [(failure? result) false])))
+
+;;---------------------Exercise 4-------------------------------------------------
+        
+;;(make-diamond-graph n) produces a graph with n diamonds
+
+;;;mk-node: Nat Str -> Sym
+(define (mk-node n suffix)
+  (string->symbol (string-append "D" (number->string n) suffix)))
+
+(define (make-diamond-graph n)
+  (build-list n (lambda (i)
+                  (list (list (mk-node (+ 1 (* 2 i)) "")
+                              (list mk-node (+ 2 (* 2 i)) "a")
+                              (list mk-node (+ 2 (* 2 i)) "b"))
+                        (list (mk-node (+ 2 (* 2 i)) "a")
+                              (list mk-node (+ 3 (* 2 i)) "")
+                        (list (mk-node (+ 2 (* 2 i)) "b")
+                              (list mk-node (+ 3 (* 2 i)) "")))))))
+                        
+;;--------------------Exercise 5---------------------------------------------------
+;;(graph-complement graph) produces the complement of a graph
+(define simple-graph
+  '((a (i j k))
+    (j ())
+    (k (a j))
+    (i (j))))
+;; (listof 
+(define (graph-complement graph)
+  (foldr (lambda (frst acc)(cons (list (first frst)(complement-nodes frst (listof-nodes graph))) acc)) empty graph))
+
+;;helper-function-1
+;;(listof-nodes graph) produces list of all its nodes
+;;Graph -> listof Node
+(define (listof-nodes graph)
+  (foldr (lambda (x rror)(cons (first x) rror)) empty graph))
+
+;;helper-function-2
+;;(complement-nodes nbrs-lst list-of-nodes) produces the complemented version of a provided nbrs list (you get what you didn't have but lose what you already have)
+;;(list Node (listof Node))  -> (listof Node)
+
+(define (complement-nodes node-al list-of-nodes)
+  (foldr (lambda (x rror)(cond [(symbol=? x (first node-al)) rror]
+                               [(member? x (second node-al)) rror]
+                               [else (cons x rror)])) empty list-of-nodes))
+
+
+
+
