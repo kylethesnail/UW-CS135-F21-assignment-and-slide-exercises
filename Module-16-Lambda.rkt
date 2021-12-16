@@ -1,0 +1,754 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname Module-16-Lambda) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #t)))
+q;;
+;;The whole point of Lambda is to tackle the issue of "anonymous functions" which likely has no use elsewhere
+;;i.e:
+;;(local [(define (name-used-once x_1... x_n) exp)]
+;;             name-used-once)
+
+;;can be written as (lambda (x_1... x_n) exp)
+;; "lambda" can be thought of as "make-function"
+;;------------------------self-check m16_010-------------------
+;;(local [(define (f x y)(g y x))] f)
+;;is equivalent to
+;;(lambda (x y)(g y x))
+
+
+;;Example: (eat-apples lst)
+(define (eat-apples lst)
+  (filter (local [(define (not-symbol-apple? item)
+                    (not (symbol=? item 'apple)))]
+            not-symbol-apple?)
+          lst))
+
+ (define (eat-apples-v2 lst)
+   (filter (lambda (item)(not (symbol=? item 'apple))) lst))
+
+;;Example: (make-adder n)
+(define (make-adder n)
+  (local [(define (f m) (+ n m))] f))
+
+(define (make-adder-1 n)
+  (lambda (m) (+ n m)))
+
+;; (make-between n m) produces a function that consumes one number
+;;   and produces true if that number is between n and m; false otherwise.
+;; Examples:
+(check-expect ((make-between 3 5) 2) false)
+(check-expect ((make-between 3 5) 3) true)
+(check-expect ((make-between 3 5) 6) false)
+
+;; make-between: 
+(define (make-between n m)
+  (local [(define (f x) (and (<= n x) (<= x m)))] f))
+
+;;re-implementing (make-between a b)
+(define (make-between-v2 a b)
+  (lambda (x) (and (<= a x) (<= x b))))
+
+;;-------------------self-check m16-100-----------------
+((lambda (x) (+ 3 x)) 4)
+
+;;-------------------self-check m16_105-----------------
+((lambda (x y) (- (min x y) (max x y))) 3 2)
+
+;;Introducing Lambda: From pain-staking local helper function to anonymous functions that are just not useful elsewhere
+
+(define (eat-apples-v1 lst)
+  (local [(define (not-an-apple? item)
+            (not (symbol=? item 'apple)))]
+    (filter not-an-apple? lst)))
+
+(eat-apples-v1 (list 'apple 'apple 'apple 'pear 'pineapple 'lima 'india))
+
+
+
+(define (make-between-v1 n m)
+  (local [(define (f x)(and (>= x n)(<= x m)))] f))
+
+(filter (make-between-v1 2 4) (list 1 3 5 2 2 3 4 9 8))
+
+;;Now introducing lambda
+(define (eat-apples-v4 lst)
+  (filter (lambda (item) (not (symbol=? item 'apple))) lst))
+
+(define lst '(3 5 9 5 5 4))
+(filter (lambda (x) (= 5 x)) lst)                  
+(filter (lambda (x) (and (<= 3 x) (<= x 5))) lst)   
+(filter (lambda (s) (char>? s #\Z)) '(#\B #\a #\y))
+
+;;Tracing through (eat-apple-v2 lst)
+(define (eat-apples-v3 lst)
+  (filter (lambda (item) (not (symbol=? item 'apple))) lst))
+
+;;;now define an input application
+;(eat-apples-v2 '(pear apple))
+;=> (filter (lambda (item)(not (symbol=? item 'apple))) '(pear apple))
+;=> (cond [(empty? '(pear apple))empty]
+;         [((lambda (item)(not (symbol=? item 'apple)))
+;           (first '(pear apple)))]
+;         (cons (first 'pear apple))
+
+;;self-check m16_110-----------------------------------
+([(lambda (x)(lambda (y)(- (min x y) (max x y))))3] 2)
+
+;;self-check m16_115-----------------------------------(17/69)
+;((lambda (x)
+ ;  (lambda (y)
+  ;   (- (min x y) (max x y)))) 
+  ;3 2)
+
+;;self-checl m16_120--------------------------------(17/69)-------------
+;;PAY ATTENTION TO WHAT EACH IS DOING FOR A BETTER UNDERSTANDING OF LAMBDA-------------------------------------
+;;A
+(define (recip x) (lambda (x) (/ 1 x))) ;;this is returning a function which calculates reciprocal by binding another function to it, in (recip x) the x parameter does not matter
+((recip 999) 10) ;; HERE 999 is abandoned
+
+;;;B
+;(define (recip-2)(lambda (x) (/ 1 x))) ;; this is also returning a function which calculates the reciprocal which is binded to a function which takes in no parameters,will yield an error at our current language level
+;((recip) 10)
+
+;;C
+
+(define recip-3 (lambda (x)(/ 1 x))) ;; defines constant "recip-3" which is a function that calculates the reciprical of the provided number
+(recip-3 10)
+
+((lambda (x) (/ 1 x)) 10)
+
+;;D 
+;;(lambda (recip x) (/ 1 x)) ;; by itself is a lambda expression, takes two parameters, one being recip, the other is x, recip will be ignored
+;;to use it we have to add extra set of brackets
+((lambda (recip x) (/ 1 x)) 999 10)
+
+;;------------------------------Exercise 1------------------------------------------
+;;Using lambda and filter but no named helper functions and write a function that consumes a (listof Str) and produces a list contaning all strings with a length of 4
+(check-expect (keep4 '("There's" "no" "fate" "but" "what" "we" "make" "for""ourselves")) '("fate" "what" "make"))
+
+;;keep4: (X -> Bool)(listof X) -> (listof X)
+
+(define (keep4 los)
+  (filter (lambda (item) (equal? 4 (string-length item))) los))
+
+;;------------------------------Character-Transformation Example----------------------------------
+;;Function transform consumes a string and transforms it according to a set of rules
+;(check-expect (transform "abracadabra"...) "bbrbcbdbbrb")
+;(check-expect (transform "Testing 1-2-3"...) "TESTING *-*-*")
+
+;;suppose we supplied (transform...) with a list of question/answer pairs:
+
+;;A TransformSpec is one of:
+;; *empty
+;; *(cons (list Question Answer) TransformSpec) a list of question answer pairs, just like cond
+
+;;A Question is a (Char -> Bool)
+;;An Answer is a (Char -> Char) consumes a character and returns a (possibly different) character
+
+(check-expect (transform "Testing 1-2-3" (list (list char-lower-case? char-upcase)
+                                               (list char-numeric? (lambda (ch) #\*))))
+              "TESTING *-*-*")
+
+;;TransformSpec is one of:
+;;* empty
+;;* (cons (list Question Answer) TransformSpec)
+
+;;a list of question answer pairs, if question evaluates to true then apply the answer, else go on to the next q/a pair
+
+;;transform: Str TransformSpec -> Str
+(define (transform s spec)
+  (list->string (trans-loc (string->list s) spec)))
+
+;;helper-function
+;;trans-loc (listof Char) TransformSpec  -> (listof Char)
+(check-expect (trans-loc (list #\a #\9)
+                        (list (list char-lower-case? char-upcase)))
+                           (list #\A #\9))
+
+(define (trans-loc loc spec)
+  (cond [(empty? loc) empty]
+        [(cons? loc) (cons (trans-char (first loc) spec) ;;take the first character in the list and pass it off to a helper (trans-char ch spec) then cons it on the result of trans-loc of the rest of the loc
+                           (trans-loc (rest loc) spec))]))
+
+(define (trans-char ch spec)
+  (cond [(empty? spec) ch] ;; return the character unchanged if we did not find a case which applies in spec
+        [((first (first spec)) ch)((second (first spec)) ch)];; go through the specs row by row until we find one that applies to ch, then apply the function in the second part on the ch to transform it as desired
+        [else (trans-char ch (rest spec))]))
+
+(check-expect (transform "abracadabra" (list (list (lambda (ch) (char=? ch #\a)) ;;Question
+                                                   (lambda (ch) #\b))));;Answer
+                                                         "bbrbcbdbbrb")
+
+;; we may write some utility functions:
+(define (is-char? c1) (lambda (c2) (char=? c1 c2)))
+(define (always c1) (lambda (c2) c1))
+
+;;-------------------self-check: m16_220-------------------
+;(transform "I love Racket"
+;  (list (list (lambda (ch) true)
+;              (lambda (ch) (next-char ch)))
+;        (list char-whitespace? 
+;              (lambda (ch) #\.))))
+
+;;;utility functions:
+;(define is-char? (lambda (ch)(character?
+                           
+
+
+;;--------------------------------------The "map" higher order function(29/69)--------------------------------------
+
+;;consider the following two functions
+(define (negate-list lst)
+  (cond [(empty? lst) empty]
+        [else (cons (- (first lst))
+                    (negate-list (rest lst)))]))
+
+;(define (computer-taxes payroll)
+;  (cond [(empty? payroll) empty]
+;        [else (cons (sr-> tr (first payroll))
+;                    (computer-taxes (rest payroll)))]))
+
+;;Now compare and see what is same and what is different
+;;(X->Y) (listof X) -> (listof Y)
+(define (my-map f lst) ;; notice the function (like "-" and "sr->tr" are passed in as parameters)
+  (cond [(empty? lst) empty]
+        [else (cons (f (first lst))
+                    (my-map f (rest lst)))]))
+
+(define (negate-list-v1 lst)
+  (my-map - lst))
+
+(negate-list-v1 '(1 2 3 4 5 6))
+
+;;----Now we apply (my-map f lst) to the trans-loc function
+;(define (trans-loc loc spec)
+;  (cond [(empty? loc) empty]
+;        [(cons? loc) (cons (trans-char (first loc) spec) ;;take the first character in the list and pass it off to a helper (trans-char ch spec) then cons it on the result of trans-loc of the rest of the loc
+;                           (trans-loc (rest loc) spec))]))
+
+;(trans-loc-v2 (string->list "charlie")
+
+;(define (trans-loc-v2 loc spec)
+;  (map (lambda (ch) (trans-char ch spec)) loc))
+;
+;(define (trans-char-v1 ch spec)
+;  (cond [(empty? spec) ch] ;; return the character unchanged if we did not find a case which applies in spec
+;        [((first (first spec)) ch)((second (first spec)) ch)];; go through the specs row by row until we find one that applies to ch, then apply the function in the second part on the ch to transform it as desired
+;        [else (trans-char-v1 ch (rest spec))]))
+
+;;-------------------------------------Exercise 2--------------------------------------------
+;;(squash-range lst) produces to scale the numbers on the interval [0,255] to the interval of [0,1]
+
+(check-expect (squash-range '(0 204 255)) '(0 0.8 1))
+
+;;(Nat -> Nat)(listof Nat) -> (listof Num)
+
+(define (squash-range lon)
+  (map (lambda (num) (/ num 255)) lon))
+
+;;-------------------------------------Exercise 3----------------------------------------
+;;(greet-each los) produces a list containing a greeting for each person
+(check-expect (greet-each '("Ali" "Carlos" "Sai")) '("Hi Ali" "Hi Carlos" "Hi Sai"))
+
+;;(listof Str) -> (listof Str)
+
+(define (greet-each los)
+  (map (lambda (string)(string-append "Hi " string)) los))
+
+;;------------------------------------Exercise 4------------------------------------------
+;;(negate-odd lon) produces a list of integers where all odd numbers are made negative and all even numbers are left positive
+(check-expect (neg-odd '(2 5 8 11 14 17)) '(2 -5 8 -11 14 -17))
+(check-expect (neg-odd '(2 -4 5 11 7 8)) '(2 4 -5 -11 -7 8))
+
+(define (neg-odd lon)
+  (map (lambda (number)(cond [(and(odd? number)
+                                  (positive? number)) (- number)]
+                             [(and (even? number)
+                                   (negative? number))(- number)]
+                             [else number])) lon))
+
+;;----------------------------Leslie's 20w exercise on map--------------------------------
+;;converting list of grades to credit ('CR) or no credit ('NCR)
+(define (cr-ncr/lst lst)
+  (map (lambda (x)(cond [(>= x 50) 'CR]
+                        [(< x 50) 'NCR])) lst))
+
+(check-expect (cr-ncr/lst '(49 55 21 100 95 54 78)) (list 'NCR 'CR 'NCR 'CR 'CR 'CR 'CR))
+
+;;AL(associated list) entry (key value) 
+;;AL is (anyof empty (cons entry AL)
+
+;;get keys from an associated list (al)
+
+(define (get-keys al)
+  (map (lambda (x) (first x)) al))
+
+(get-keys '((2 4)(3 4)(5 6)(9 8)(4 3)(2 1)(1 5)))
+          
+
+;;---------------------------------------FOLDR--------------------------------------
+;;More higher order functions which produce values
+;;so far the Abstract List Functions (ALF) namely "map" and "filter" both consumes a list and produces a list
+;;What if we need a function which only produces a single value?
+;;Again compare and contrast the three examples
+(define (sum-of-numbers-v2 lst)
+  (cond [(empty? lst) 0]
+        [else (+ (first lst)
+                 (sum-of-numbers-v2 (rest lst)))]))
+
+(define (prod-of-numbers-v2 lst)
+  (cond [(empty? lst) 1]
+        [else (* (first lst)
+                  (prod-of-numbers-v2 (rest lst)))]))
+
+(define (all-true-v2? lst)
+  (cond [(empty? lst) true]
+        [else (and (first lst)
+              (all-true-v2? rest lst))]))
+
+;;Compare and contrast: each of these examples have a base case which is a value to be returned when the argument list is empty
+;;Each example is applying some function to combine (first lst) and the result of a recursive function application with argument (rest lst)
+
+;;CONTRACT:
+;; (X (listof Y)-> Y ) Y (listof X) -> Y
+(define (my-foldr combine base lst)
+  (cond [(empty? lst) base]
+        [else (combine (first lst)
+                       (my-foldr combine base (rest lst)))]))
+;
+;   (my-foldr f 0 (list 3 6 5))
+;=> (f 3 (my-foldr f 0 (list 6 5)))
+;=> (f 3 (f 6 (f 5 0)))
+;;;notice the pattern
+
+;;Intuitively, the effect of the application
+;;(foldr f b (list x_1 x_2 x_3... x_n))
+;;is equivalent to
+;;(f x_1 (f x_2 (f x_3 (... (f x_n b))))
+
+;;Now re-write our initial functions
+(define (sum-of-numbers-v3 lst)
+  (foldr + 0 lst))
+
+(define (prod-of-numbers-v3 lst)
+  (foldr * 1 lst))
+
+(define (all-true-v3? lst)
+  (foldr (lambda (x rorr) (and x rorr)) true lst)) ;; we utilize a lambda expression here as "and" is not a function, "rorr" stands for result of recursion on the rest
+
+;;-----------More foldr examples----------------
+
+(define (bar lon)
+  (foldr max (first lon) (rest lon)))
+
+(bar '(1 5 23 3 99 2))
+
+(define (foo los)
+  (foldr (lambda (s rror)(+ (string-length s) rror)) 0 los))
+
+(foo '("one" "two" "three"))
+
+
+(foldr (lambda (x rror)(+ x rror rror)) 1 '(3 4 5))
+
+;;------------self-check- m16_410
+;; bar-2: (listof Num) -> ???
+(define (bar-2 lon) (foldr max 0 (rest lon)))
+
+;;Remember: while using foldr
+;;Example
+(define (sum-of-numbers lst) (foldr + 0 lst))
+
+;;let lst be (list x_1 x_2 x_3 ... x_n)
+
+;; the expression (foldr + 0 lst) is reduced to:
+;;(+ x_1 (+ x_2 (+ x_3 (...(+ x_(n-1)(+ x_n 0))))))
+
+
+;;------------------Exercise 5-----------------------------------
+;;use foldr that produces the number of odder numbers in a (listof Nat)
+
+;;1. just foldr
+;; (count-odd lon) produces the number of odd numbers in given lon
+;;(listof Nat) -> Nat 
+(define (count-odd lon)
+  (foldr (lambda (num rror)(cond [(odd? num) (+ 1 rror)]
+                                 [else rror])) 0 lon))
+
+;;2. foldr with filter
+;(define (count-odd-v2 lon)
+;  (foldr (lambda (num rror)(cond [(filter odd? (list (first lon)))(+ 1 rror)
+;                                                                  (else rror)])) 0 lon))
+
+;;3. map and foldr
+;;
+
+
+
+
+;;-----------------Exercise 6--------------------------------------
+;; use foldr to write a function prod that produces the product of a (listof Num)
+;; (prod lon) produces the product of the list of numbers
+;; (listof Nat) -> Nat
+
+(check-expect (prod '(1 2 3 4 5)) 120)
+
+(define (prod lon)
+  (foldr (lambda (num rror) (* num rror)) 1 lon))
+
+;;-----------------Exercise 7---------------------------------------
+;; use foldr to write a function total-length which produces the total number of elements in a list of lists
+;;version-1
+(check-expect (total-length-v1 '((1 2 3)(4 5)(1 1 1))) 8)
+;; (listof (listof Num)) -> Nat
+(define (total-length-v1 lolon)
+  (foldr (lambda (lst rror)(+ (length lst) rror)) 0 lolon))
+
+;;;version-2
+(check-expect (total-length-v2 '((1 2 3)(4 5)(1 1 1))) 8)
+(check-expect (total-length-v2 '((1 3 4 5 6 7) (1 2 3 4) (5 8))) 12)
+(define (total-length-v2 lolon)
+  (foldr (lambda (lst rror)(+ (foldr (lambda (item rror2)(+ 1 rror2)) 0 lst) rror));; length of individual list]
+                              0 lolon)) 
+
+;(define (length-of-lst lst)
+;  (foldr (lambda (item rror)(+ 1 rror)) 0 lst)) 
+
+;;--------------Exercise 8------------------------------------
+;;use foldr to wirte a function which produces the average of a non-empty (listof Num)
+;;(average lon) produces the avearage of the list of number
+(check-expect (average '(2 4 9)) 5)
+(check-expect (average '(4 5 6 6)) 5.25)
+
+;;(listof Num)-> Num
+
+(define (average lon)
+  (/(foldr (lambda (item rror) (+ item rror)) 0 lon)(foldr (lambda (item rror)(+ 1 rror)) 0 lon)))
+
+;;-------------Exercise 9--------------------------------------
+;;(times-square lon) produces the product of all perfect squares in the list
+
+(check-expect (times-square '(1 25 5 4 1 17)) 100)
+
+;;(listof Nat) -> Nat
+
+
+
+(define (times-square lon)
+  (foldr (lambda (item rror)(cond [(integer? (sqrt item))(* item rror)]
+                                  [else rror])) 1 lon))
+
+
+;;------------Use foldr to produce lists-------------------
+;;Remember that foldr is an abstraction of simple recursion on lists, so we should be able to use it to
+;;implement negate-list from M06
+;; (negate-list lst) takes the first element from the list negates it and cons it onto the result o the recursive function application
+
+(define (negate-list-v2 lst)
+  (cond [(empty? lst) empty]
+        [else (cons (- (first lst)) (negate-list-v2 (rest lst)))]))
+
+;;We first define a function lambda (x rror) which combines x and rror where x is the first element of the list and rror is the reult of the recursive function application
+;;on the rest of the list
+
+(lambda (x rror)(cons (- x) rror))
+
+(define (negate-list-v3 lst)
+  (foldr (lambda (x rror)(cons (- x) rror)) empty lst))
+
+;;and don't forget how we implemented negate using map
+;(define (negate-list lst)
+;  (my-map - lst))
+
+;;Now let's take a look at the code for my-map
+
+(define (my-map-v1 f lst)
+  (cond [(empty? lst) empty]
+        [else (cons (f (first lst))
+                    (my-map-v1 f (rest lst)))]))
+
+;;Implement my-map with foldr
+
+(define (my-map-v2 f lst)
+  (foldr (lambda (x rror)(cons (f x) rror)) empty lst))
+
+;;Now let's attempt implementing my-filter using foldr, first start 
+
+(define (my-filter pred? lst)
+  (cond [(empty? lst) empty]
+        [(pred? (first lst))
+         (cons (first lst)(my-filter pred? (rest lst)))]
+        [else (my-filter pred? (rest lst))]))
+
+;(define (my-foldr combine base lst)
+;  (cond [(empty? lst) base]
+;        [else (combine (first lst)
+;                       (my-foldr combine base (rest lst)))]))
+
+;;re-write my-filter? by moving the last two question/answer clauses into an else clause:
+
+(define (my-filter-v2 pred? lst)
+  (cond [(empty? lst) empty]
+        [else (cond [(pred? (first lst))
+                     (cons (first lst) (my-filter-v2 pred? (rest lst)))]
+                    [else (my-filter-v2 pred? (rest lst))])]))
+  
+
+;;now write the [else (my-filter-v2 pred? (rest lst)))] clause into a function:
+
+(define (my-filter-v3 pred? lst)
+  (local [(define (maybe-cons x filtered)
+            (cond [(pred? x) (cons x filtered)]
+                  [else filtered]))]
+    ;;observe the part below now looks like foldr
+   (cond [(empty? lst) empty]
+        [else (maybe-cons (first lst)
+                          (my-filter-v3 pred? (rest lst)))])))
+
+;;Finally implememnting my-filter with foldr
+(define (my-filter-v4 pred? lst)
+  (foldr (lambda (x filtered)
+           (cond [(pred? x)(cons x filtered)]
+                 [else filtered])) empty lst))
+
+;;alternative (my-filter pred? lst) using foldr
+;; my-filter: (X -> Bool)(listof X) -> (listof X)
+(check-expect (my-filter-v5 even? '(0 1 2 3 4 5 6)) '(0 2 4 6))
+
+(define (my-filter-v5 pred? lst)
+  (my-foldr (lambda (x rror) (cond [(pred? x) (cons x rror)]
+                                    [else rror])) empty lst)) ;; ??? ??? for combining function and the base, the combining function should be looking at an element in the list and decide whehther it should be kept or not which is also a list of X
+
+;;compare with my-foldr: (X Y -> Y) Y (listof X) -> Y
+  (define (my-foldr-v5 combine base lst)
+    (cond [(empty? lst) base]
+          [else (combine (first lst)
+                         (my-foldr-v5 combine base (rest lst)))]))
+
+;;-------------------------------------Exercise 10-------------------------------------
+;;re-write double-each using foldr and without using map
+(define (double n)(* n 2))
+(define (double-each lst) (map double lst))
+
+(define(double-each-v2 lst)
+  (foldr (lambda (x rror) (cons(* x 2) rror)) empty lst))
+
+(define(double-each-v3 lst)
+  (foldr (lambda (x rror) (cons (double x) rror)) empty lst))
+
+
+;;------------------------------------Exercise 11---------------------------------------
+;;using foldr and not using filter, rewrite (keep-evens lst) so it still produces the list containing
+;;all the evens in the lst
+
+(check-expect (keep-evens '(1 2 3 4 5 6)) '(2 4 6))
+
+;;(listof Num) -> (listof Num)
+(define (keep-evens lon)
+  (foldr (lambda (x rror) (cond [(even? x) (cons x rror)]
+                                [else rror])) empty lon))
+
+;;-----------------------------------Exercise 12----------------------------------------
+;;using lambda but no named helper functions, write a function which consumes a (listof Int) and produces the sum of all even values
+
+(check-expect (sum-evens (list 2 3 4 5)) 6)
+;; (listof Num) -> Num
+(define (sum-evens lon)
+  (foldr + 0 (filter even? lon)))
+
+(check-expect (sum-evens-v2 (list 2 3 4 5)) 6)
+
+(define (sum-evens-v2 lon)
+  (foldr (lambda (x rror) (cond [(even? x) (+ x rror)]
+                                [else rror])) 0 lon))
+
+;;---------------------------------Exercise 13----------------------------------------
+;;(multiply-each lst n) which consumes a listof Num and a Num and produces the list contianing all the values in the lst each multiplied by n
+
+(check-expect (multiply-each (list 2 3 5) 4) (list 8 12 20))
+
+;;(listof Num) Num -> (listof Num)
+
+(define (multiply-each lon n)
+  (foldr (lambda (x rror) (cons (* x n) rror)) empty lon))
+
+;;---------------------------------Exercise 14-----------------------------------------
+;;(add-total lst) which consumes a (listof Num) and adds the total of the values in lst to each value in lst
+(check-expect (add-total (list 2 3 5 10))(list 22 23 25 30))
+
+;;(listof Num)->(listof Num)
+
+(define (add-total lon)
+  (foldr (lambda (x rror)(cons (+ x (foldr (lambda (x rror) (+ x rror)) 0 lon)) rror)) empty lon))
+
+;;--------------------------------Exercise 15------------------------------------------
+;;(discard-bad lst lo hi) which produces a list of all values in lst that are between lo and hi inclusive
+
+(check-expect (discard-bad '(12 5 20 2 10 22) 10 20) '(12 20 10))
+
+;;(listof Num) -> (listof Num)
+
+(define (discard-bad lst lo hi)
+  (foldr (lambda (x rror)(cond [(and (>= x lo)
+                                     (<= x hi))(cons x rror)]
+                               [else rror])) empty lst))
+
+;;-------------------------------Exercise 16-------------------------------------------;;
+;;(squash-bad lo hi lst) produces a list where number in lst bigger than hi becomes hi and those smaller than lo becomes lo
+
+(check-expect (squash-bad 10 20 '(12 5 20 2 10 22)) '(12 10 20 10 10 20))
+
+(define (squash-bad lo hi lst)
+  (foldr (lambda (x rror)(cond [(>= x hi)(cons hi rror)]
+                               [(<= x lo)(cons lo rror)]
+                               [else (cons x rror)])) empty lst))
+
+
+;;------------------------------Exercise 17---------------------------------------------
+;; (above-average lon) produces a list containing just the vales greater than or equal to the average
+
+(check-expect (above-average '(1 1 1 1 1 1)) '(1 1 1 1 1 1))
+(check-expect (above-average '(1 2 1 1 1 1)) '(2))
+
+(define (above-average lon)
+  (local [(define (average lon)
+            (/(foldr (lambda (x rror)(+ x rror)) 0 lon)(foldr (lambda (x rror)(+ 1 rror)) 0 lon)))]
+
+    (foldr (lambda (x rror)(cond [(>= x (average lon))(cons x rror)]
+                               [else rror])) empty lon)))
+
+;;---------------------------FOLDL-------------------------------
+;;Generalizing accumulative recursion
+;;accumulatively compute the sum of a list
+(define(sum-list lst0)
+  (local [(define (sum-list/acc lst sum-so-far)
+            (cond [(empty? lst) sum-so-far]
+                  [else(sum-list/acc (rest lst) (+ (first lst) sum-so-far))]))]
+    (sum-list/acc lst0 0)))
+(check-expect (sum-list '(1 2 3 4)) 10)
+
+;;accumulatively cons the reversed version of a given list
+
+(define (rev-list lst0)
+  (local[(define (rev-list/acc lst lst-so-far)
+           (cond [(empty? lst) lst-so-far]
+                 [else (rev-list/acc (rest lst)(cons (first lst) lst-so-far))]))]
+    (rev-list/acc lst0 empty)))
+
+;;now combine the above two functions into "foldl"
+
+(define (my-foldl combine base lst0)
+  (local [(define (my-foldl/acc lst acc)
+            (cond [(empty? lst) acc]
+                  [else (my-foldl/acc (rest lst)(combine (first lst) acc))]))]
+    (my-foldl/acc lst0 base)))
+
+;; how we would go about implementing (rev-list lon) and (sum-list lst)
+
+(define (sum-lst-v2 lon)
+  (my-foldl + 0 lst))
+
+(define (rev-lst-v2 lst)
+  (my-foldl cons empty lst))
+
+
+;;how foldl work
+;;(foldl f b (list x_1 x_2 x_3... x_n))
+;;=> (f x_n (...(f x_4 (f x_3 (f x_2 (f x_1 b))))))
+
+(check-expect (foldl string-append "Base" '("Never" "have" "I" "ever" "met" "someone" "like" "you"))
+              "youlikesomeonemeteverIhaveNeverBase")
+
+;;CONTRACT for foldl
+;;foldl: (X Y ->Y) Y (listof X)-> Y
+
+;;--------------------------------Ex.18--------------------
+(foldl (lambda (x y)(+ x y y)) 1 (list 3 4 5))
+(foldr (lambda (x y)(+ x y y)) 1 (list 3 4 5))
+;;(map (lambda (x y)(+ x y y))(list 3 4 5)) ;; map must apply a function which has its first argument a function that expects one argument
+
+;;Use foldr and foldl to handle multiple lists, provided the combining function has one parameter for each list plus the rror parameter 
+(foldr + 0 '(1 2 3) '(4 5 6))
+
+(foldr (lambda (x y rror) (cons (+ x y) rror)) empty '(1 2 3) '(4 5 6))
+
+(foldl (lambda (x y z rror)
+         (cons (+ x y z) rror)) empty '(1 2 3) '(4 5 6) '(7 8 9))
+
+;;--------------------------------Build-list(63/69)------------------------------
+;;build-list consumes a natural number n and a function f and produces the list
+;;(list (f 0) (f 1) (f 2)....(f (sub1 n)))
+
+;;(build-list 4 (lambda (x) x)) => (list 0 1 2 3)
+;;(build-list 4 (lambda (x) (* 2 x)) => (list 0 2 4 6)
+
+;;build-list abstracts the "count up" pattern
+
+(define (my-build-list n f)
+  (local [(define (list-from i)
+            (cond [(>= i n) empty]
+                  [else (cons (f i)(list-from (add1 i)))]))] (list-from 0)))
+
+;;---------------build-list examples---------------------------------
+;;sum of f(i) from 0 to n-1
+(define (sum n f)
+  (foldr + 0 (build-list n f)))
+
+(sum 4 sqr)
+
+(define (build-arithmetic-list lon)
+  (append (list (first lon))(build-list (- (length lon) 1)(lambda (x)(+ (second lon)(* x (- (second lon)(first lon))))))))
+
+(check-expect (build-arithmetic-list '(1 2 3 4 5)) '(1 2 3 4 5))
+(check-expect (build-arithmetic-list '(1 3 6 5 5)) '(1 3 5 7 9))
+
+;;------------------------------Exercise.19 Build-list-----------------------------
+;;(triangles k) produces a list containing the first k triangular numbers the n-th triangular number is given by Tn = (n)(n+1)/2
+(check-expect (triangles 4)(list 0 1 3 6))
+(check-expect (triangles 5)(list 0 1 3 6 10))
+
+;;(listof Num) -> (listof Num)
+(define (triangles k)
+  (build-list k (lambda (x)(/ (* x (+ 1 x)) 2))))
+
+;;-----------------------------Mult-table-------------------------------------------
+;;use build-list to further simplify "mult-table"
+'((0 0 0 0) ;;mult0
+  (0 1 2 3) ;;mult1
+  (0 2 4 6) ;;mult2
+  (0 3 6 9) ;;mult3
+  (0 4 8 12)) ;;mult4
+
+(define (build-row r)
+  (build-list 4 (lambda (i) (* i r))))
+
+(build-row 2)
+(build-row 4)
+
+;;Now let's go straight to the table-building
+
+(define (mult-table nr nc)
+  (local[(define (build-row r)
+           (build-list nc (lambda (i) (* i r))))]
+     (build-list nr build-row)))
+
+(mult-table 5 6)
+
+(define (mult-table-v1 nr nc)
+  (build-list nr
+              (lambda (r)
+                (build-list nc
+                            (lambda (i) (* i r))))))
+
+(mult-table-v1 5 6)
+
+;;produce the first n even numbers
+(define (even n)
+  (build-list n (lambda (x) (* 2 x))))
+
+;;produce a list of powers of 2
+(define (powers-of-2 n)
+  (build-list n (lambda (x)(expt 2 x))))
+
+(powers-of-2 10)
+
+
